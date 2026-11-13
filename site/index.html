@@ -42,7 +42,6 @@ dd{margin:0;color:var(--muted)}
 .setting{display:flex;flex-wrap:wrap;gap:.5rem .75rem;align-items:center;font-size:var(--s0);color:var(--muted)}
 
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-#stage{position:fixed;left:0;top:0;width:2px;height:2px;opacity:.01;pointer-events:none}
 </style>
 </head>
 <body>
@@ -63,9 +62,9 @@ dd{margin:0;color:var(--muted)}
 
   <dl>
     <dt>Stick right, or A / X</dt><dd>Next video</dd>
-    <dt>Stick left, or B / Y</dt><dd>Previous video</dd>
+    <dt>Stick left</dt><dd>Previous video</dd>
     <dt>Trigger</dt><dd>Pause or resume</dd>
-    <dt>Meta button</dt><dd>Leave VR</dd>
+    <dt>B / Y</dt><dd>Leave VR</dd>
   </dl>
 
   <label class="setting">Renderer
@@ -75,7 +74,6 @@ dd{margin:0;color:var(--muted)}
     </select>
   </label>
 </main>
-<video id="stage" loop playsinline preload="auto"></video>
 
 <script type="module">
 const FORMATS = [
@@ -89,7 +87,8 @@ const store = {
   get: k => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
-const video = $('stage');
+const SWAP_MS = 120;     // time for a removed layer to leave the compositor before its player is freed
+let video = null;        // player for the current video; every video gets a fresh one
 const items = [];        // {name, size, url, w, h, format, manual}
 let cur = null;          // item playing, or first to play
 let xr = null;           // live session state
@@ -148,7 +147,7 @@ function render() {
     for (const [v, label] of FORMATS) sel.add(new Option(label, v, false, v === it.format));
     sel.onchange = () => {
       it.format = sel.value; it.manual = true; store.set('fmt:' + it.name, sel.value);
-      if (xr && it === cur) { xr.key = ''; applyFormat(); }
+      if (xr && it === cur) play(it, true);
     };
     li.append(name, sel);
     return li;
@@ -179,7 +178,7 @@ $('pick').addEventListener('change', async e => {
 
 $('clear').onclick = () => {
   if (xr) return;
-  video.removeAttribute('src'); video.load();
+  release(video); video = null;
   items.forEach(it => URL.revokeObjectURL(it.url));
   items.length = 0; cur = null; status(''); render();
 };
@@ -189,16 +188,55 @@ renderer.value = store.get('renderer') || 'layer';
 renderer.onchange = () => store.set('renderer', renderer.value);
 
 // ---------- playback ----------
-function play(item) {
+// The headset's media layer reads straight from the player's decoder, so a player bound to a
+// layer is never given a new file. Each switch: take the layer out of the scene, wait for the
+// compositor to let go, destroy it, free the old player, then start a fresh one. Only one
+// decoder runs at a time.
+function release(v) { if (!v) return; v.pause(); v.removeAttribute('src'); v.load(); }
+function destroyLayer(l) { try { l?.destroy?.(); } catch {} }
+
+function play(item, restart = false) {
+  if (!restart && item === cur && video) { video.currentTime = 0; video.play().catch(() => {}); return; }
   cur = item;
   const g = ++gen;
-  if (video.src !== item.url) video.src = item.url; else video.currentTime = 0;
-  video.play().catch(err => { if (g === gen && err.name === 'NotAllowedError') status('The browser blocked playback. Tap Enter VR again.'); });
-  if (video.readyState >= 1) applyFormat();
-  else video.addEventListener('loadedmetadata', () => { if (g === gen) applyFormat(); }, { once: true });
-  if (xr?.gl) xr.gl.dirty = true;
   render();
+  if (xr?.mode !== 'layer') { load(item); return; }
+  const s = xr;
+  let old = s.layer;
+  s.layer = null; s.key = '';
+  if (old) {
+    try { s.session.updateRenderState({ layers: [] }); }
+    catch { const o = old; s.retire.push(() => destroyLayer(o)); old = null; }   // keep it up until its replacement is in
+  }
+  setTimeout(() => { destroyLayer(old); if (g === gen && xr === s) load(item); }, SWAP_MS);
 }
+
+function load(item) {
+  const old = video;
+  if (xr?.retire.length) xr.retire.push(() => release(old)); else release(old);
+  const v = video = document.createElement('video');
+  v.loop = true; v.playsInline = true; v.preload = 'auto';
+  const mine = f => () => { if (v === video) f(); };
+  v.addEventListener('loadedmetadata', mine(applyFormat));
+  v.addEventListener('loadeddata', mine(markDirty));
+  v.addEventListener('seeked', mine(markDirty));
+  v.addEventListener('playing', mine(() => { if (xr) xr.errors = 0; }));
+  v.addEventListener('playing', mine(matchRefreshRate), { once: true });
+  v.addEventListener('error', mine(() => {
+    status(`${cur.name} won’t play here. The headset may not decode its codec or resolution.`);
+    if (xr && xr.errors++ < items.length) step(lastDir);
+  }));
+  v.src = item.url;
+  v.play().catch(err => {
+    if (v !== video || err.name !== 'NotAllowedError') return;
+    v.muted = true; v.play().catch(() => {});
+    status('The browser blocked sound, so videos are playing muted.');
+  });
+  if (xr) xr.key = '';
+  markDirty();
+}
+
+function markDirty() { if (xr?.gl) xr.gl.dirty = true; }
 
 function step(d) {
   if (!items.length) return;
@@ -207,25 +245,33 @@ function step(d) {
   play(items[(i + d + items.length) % items.length]);
 }
 
-video.addEventListener('error', () => {
-  if (!cur) return;
-  status(`${cur.name} won’t play here. The headset may not decode its codec or resolution.`);
-  if (xr && xr.errors++ < items.length) step(lastDir);
-});
-video.addEventListener('playing', () => { if (xr) xr.errors = 0; });
-video.addEventListener('loadeddata', () => { if (xr?.gl) xr.gl.dirty = true; });
-video.addEventListener('seeked', () => { if (xr?.gl) xr.gl.dirty = true; });
+// A 30 fps video on a 72 Hz display holds frames for uneven times, which reads as stutter.
+// Measure the video's frame rate and pick the refresh rate it divides most evenly.
+function matchRefreshRate(tries = 4) {
+  const s = xr?.session, v = video;
+  if (!s?.supportedFrameRates?.length || !s.updateTargetFrameRate || !v?.getVideoPlaybackQuality) return;
+  const f0 = v.getVideoPlaybackQuality().totalVideoFrames, t0 = v.currentTime;
+  setTimeout(() => {
+    if (v !== video || xr?.session !== s) return;
+    const dt = v.currentTime - t0, fps = (v.getVideoPlaybackQuality().totalVideoFrames - f0) / dt;
+    if (!(dt > 0.5 && fps > 10)) { if (tries > 1) matchRefreshRate(tries - 1); return; }   // paused or looped
+    const off = r => r < fps ? 9 : Math.abs(r / fps - Math.round(r / fps));
+    const best = [...s.supportedFrameRates].sort((a, b) => a - b).reduce((b, r) => off(r) < off(b) - 0.02 ? r : b);
+    xr.fps = fps;
+    if (best !== s.frameRate) s.updateTargetFrameRate(best).catch(() => {});
+  }, 1500);
+}
 
 // Per-eye picture size; detects half-width/half-height packing for flat 3D.
 function eyeAspect(lay) {
-  const w = video.videoWidth || 16, h = video.videoHeight || 9;
+  const w = video?.videoWidth || 16, h = video?.videoHeight || 9;
   let a = (lay === 'sbs' ? w / 2 : w) / (lay === 'tb' ? h / 2 : h);
   if ((lay === 'sbs' && a < 1.2) || (lay === 'tb' && a > 2.5)) a = w / h;   // half-SBS / half-TB
   return a;
 }
 
 function applyFormat() {
-  if (!xr || !cur) return;
+  if (!xr || !cur || !video) return;
   const [proj, lay] = cur.format.split('-');
   const key = `${cur.format}:${video.videoWidth}x${video.videoHeight}`;
   if (key === xr.key) return;
@@ -244,14 +290,14 @@ function applyFormat() {
 // ---------- WebXR session ----------
 $('enter').addEventListener('click', () => {
   if (xr || !items.length) return;
-  play(cur ?? items[0]);                       // start inside the click so audio is allowed
+  play(cur ?? items[0], true);                 // start inside the click so audio is allowed
   const wantLayer = renderer.value === 'layer';
   navigator.xr.requestSession('immersive-vr', { optionalFeatures: wantLayer ? ['layers'] : [] })
     .then(startSession, err => { video.pause(); status('Couldn’t start VR: ' + err.message); });
 });
 
 async function startSession(session) {
-  xr = { session, mode: 'gl', key: '', prev: new Map(), errors: 0 };
+  xr = { session, mode: 'gl', key: '', prev: new Map(), errors: 0, layer: null, retire: [] };
   session.addEventListener('end', endSession);
   status('');
   try {
@@ -263,8 +309,9 @@ async function startSession(session) {
     } else {
       xr.gl = initGL(session);
     }
-    if (video.readyState >= 1) applyFormat();
+    if (video?.readyState >= 1) applyFormat();
     session.requestAnimationFrame(onFrame);
+    matchRefreshRate();
   } catch (err) {
     status('VR setup failed: ' + err.message);
     session.end();
@@ -272,9 +319,10 @@ async function startSession(session) {
 }
 
 function endSession() {
-  video.pause();
+  video?.pause();
   if (xr) {
-    try { xr.layer?.destroy?.(); } catch {}
+    destroyLayer(xr.layer);
+    xr.retire.forEach(f => f());
     xr.gl?.gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
   xr = null;
@@ -285,7 +333,7 @@ function onFrame(t, frame) {
   if (!xr || frame.session !== xr.session) return;
   xr.session.requestAnimationFrame(onFrame);
   pollInput();
-  if (xr.mode === 'gl') drawGL(frame);
+  if (xr?.mode === 'gl') drawGL(frame);
 }
 
 // Edge-triggered controller input. Thumbstick has hysteresis so one flick is one step.
@@ -302,8 +350,8 @@ function pollInput() {
     if (!p) continue;                            // first sighting: don't act on a held button
     if (now.zone && now.zone !== p.zone) step(now.zone);
     if (now.a && !p.a) step(1);
-    if (now.b && !p.b) step(-1);
-    if (now.trig && !p.trig) video.paused ? video.play().catch(() => {}) : video.pause();
+    if (now.trig && !p.trig && video) video.paused ? video.play().catch(() => {}) : video.pause();
+    if (now.b && !p.b) { xr.session.end(); return; }
   }
 }
 
@@ -317,7 +365,9 @@ function setMediaLayer(proj, lay) {
         centralHorizontalAngle: proj === '180' ? Math.PI : 2 * Math.PI,
         upperVerticalAngle: Math.PI / 2, lowerVerticalAngle: -Math.PI / 2 });
   xr.session.updateRenderState({ layers: [layer] });
-  try { xr.layer?.destroy?.(); } catch {}
+  const retired = xr.retire.splice(0);
+  if (xr.layer) { const o = xr.layer; retired.push(() => destroyLayer(o)); }
+  if (retired.length) setTimeout(() => retired.forEach(f => f()), SWAP_MS);
   xr.layer = layer;
 }
 
@@ -407,7 +457,7 @@ function drawGL(frame) {
   if (!g.count) return;
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, g.tex);
-  if (video.readyState >= 2 && (g.dirty || video.currentTime !== g.lastTime)) {
+  if (video?.readyState >= 2 && (g.dirty || video.currentTime !== g.lastTime)) {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
     g.dirty = false; g.lastTime = video.currentTime;
   }
@@ -429,7 +479,8 @@ function drawGL(frame) {
 }
 
 // ---------- startup ----------
-window.LoopOne = { detectFormat, items, step, get current() { return cur; }, get session() { return xr; } };
+window.LoopOne = { detectFormat, items, step, get current() { return cur; }, get session() { return xr; },
+  get video() { return video; }, get ready() { return !xr || xr.mode === 'gl' || !!xr.layer; } };
 
 if (!window.isSecureContext) status('This page needs HTTPS to use VR.');
 else if (!navigator.xr) status('Open this page in Meta Quest Browser to enter VR. You can build the playlist here.');
