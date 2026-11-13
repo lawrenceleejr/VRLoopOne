@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Loop One</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔂</text></svg>">
+<style>
+@font-face{font-family:"Atkinson Hyperlegible Next";font-style:normal;font-weight:400 700;font-display:swap;src:url(fonts/ahn-latin.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Atkinson Hyperlegible Next";font-style:normal;font-weight:400 700;font-display:swap;src:url(fonts/ahn-latin-ext.woff2) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C4,U+2113,U+2C60-2C7F,U+A720-A7FF}
+:root{color-scheme:light;--bg:#f3f5f8;--ink:#1a2330;--muted:#5a6575;--rule:#d3d9e1;--field:#fff;--accent:#8a5a08;--on-accent:#fff;
+  --s0:15px;--s1:19px;--s2:24px;--s3:37px;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#172232;--ink:#e9e6df;--muted:#9aa5b5;--rule:#2d3b50;--field:#1e2b3e;--accent:#e8b04a;--on-accent:#1d1404}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#172232;--ink:#e9e6df;--muted:#9aa5b5;--rule:#2d3b50;--field:#1e2b3e;--accent:#e8b04a;--on-accent:#1d1404}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 var(--s1)/1.5 "Atkinson Hyperlegible Next",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:40rem;margin:0 auto;padding:2.5rem 1.5rem 4rem}
+h1{font-size:var(--s3);line-height:1.1;margin:0 0 .6rem}
+h2{font-size:var(--s2);line-height:1.2;margin:0 auto 0 0}
+p{margin:0}
+.lede{color:var(--muted);max-width:34em;margin-bottom:2.5rem}
+.hint{color:var(--muted);font-size:var(--s0)}
+button,.btn{font:inherit;font-weight:700;color:var(--ink);background:none;border:1.5px solid var(--rule);border-radius:999px;padding:.4em 1.1em;min-height:48px;cursor:pointer;display:inline-flex;align-items:center}
+button:disabled{opacity:.4;cursor:default}
+:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.btn:focus-within{outline:3px solid var(--accent);outline-offset:3px}
+.bar{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;margin-bottom:1rem}
+ol{list-style:none;margin:.75rem 0 2.5rem;padding:0;counter-reset:n}
+li{counter-increment:n;display:grid;grid-template-columns:2em minmax(0,1fr) auto;align-items:center;gap:.25rem .75rem;padding:.35rem 0;border-top:1px solid var(--rule)}
+li:last-child{border-bottom:1px solid var(--rule)}
+li::before{content:counter(n);color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}
+li[aria-current="true"]::before{color:var(--accent);font-weight:700}
+li .name{border:0;border-radius:4px;padding:0;min-height:48px;font-weight:400;display:block;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+li[aria-current="true"] .name{font-weight:700}
+select{font:inherit;font-size:var(--s0);color:var(--ink);background:var(--field);border:1px solid var(--rule);border-radius:8px;padding:.4em .5em;min-height:44px}
+@media (max-width:32rem){li{grid-template-columns:2em minmax(0,1fr)}li select{grid-column:2;justify-self:start;margin-bottom:.4rem}}
+.enter{width:100%;justify-content:center;font-size:var(--s2);padding:.6em;border-radius:14px;background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+#status{min-height:1.5em;margin:.75rem 0 0}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:.3rem 1.25rem;margin:2rem 0;font-size:var(--s0)}
+dt{font-weight:700}
+dd{margin:0;color:var(--muted)}
+.setting{display:flex;flex-wrap:wrap;gap:.5rem .75rem;align-items:center;font-size:var(--s0);color:var(--muted)}
+
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#stage{position:fixed;left:0;top:0;width:2px;height:2px;opacity:.01;pointer-events:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>Loop One</h1>
+  <p class="lede">Each video repeats until you push the stick right, then the next one starts. Videos play from the headset’s storage, so nothing streams.</p>
+
+  <div class="bar">
+    <h2 id="pl-title">Playlist</h2>
+    <label class="btn">Add videos<input id="pick" class="sr" type="file" accept="video/*,.mp4,.m4v,.mkv,.webm,.mov" multiple></label>
+    <button id="clear" type="button" hidden>Clear</button>
+  </div>
+  <p id="empty" class="hint">In the file picker, open Internal storage, then Download. Long-press to select several. Videos play in filename order, so prefix names with 01, 02 to set it.</p>
+  <ol id="list" aria-labelledby="pl-title"></ol>
+
+  <button id="enter" class="enter" type="button" disabled>Enter VR</button>
+  <p id="status" class="hint" role="status"></p>
+
+  <dl>
+    <dt>Stick right, or A / X</dt><dd>Next video</dd>
+    <dt>Stick left, or B / Y</dt><dd>Previous video</dd>
+    <dt>Trigger</dt><dd>Pause or resume</dd>
+    <dt>Meta button</dt><dd>Leave VR</dd>
+  </dl>
+
+  <label class="setting">Renderer
+    <select id="renderer">
+      <option value="layer">Native video layer (sharpest)</option>
+      <option value="gl">WebGL (use if the layer shows black)</option>
+    </select>
+  </label>
+</main>
+<video id="stage" loop playsinline preload="auto"></video>
+
+<script type="module">
+const FORMATS = [
+  ['180-sbs', '180°, side by side'], ['180-tb', '180°, top and bottom'], ['180-mono', '180°, mono'],
+  ['360-tb', '360°, top and bottom'], ['360-sbs', '360°, side by side'], ['360-mono', '360°, mono'],
+  ['flat-sbs', 'Flat 3D, side by side'], ['flat-tb', 'Flat 3D, top and bottom'], ['flat-mono', 'Flat 2D'],
+];
+const SCREEN_W = 3.2, SCREEN_Z = -2.5;           // flat screen: metres wide, metres ahead
+const $ = id => document.getElementById(id);
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
+const video = $('stage');
+const items = [];        // {name, size, url, w, h, format, manual}
+let cur = null;          // item playing, or first to play
+let xr = null;           // live session state
+let gen = 0;             // guards stale loadedmetadata handlers
+let lastDir = 1;
+let xrOK = false;
+
+// ---------- format detection (filename tags first, then aspect ratio) ----------
+function detectFormat(name, w, h) {
+  const s = name.toLowerCase();
+  const tag = re => re.test(s);
+  const sep = '(^|[^a-z0-9])', end = '([^a-z0-9]|$)';
+  let proj = tag(/(^|\D)360(\D|$)/) ? '360'
+    : tag(/(^|\D)180(\D|$)/) || tag(/vr180/) ? '180'
+    : tag(new RegExp(sep + '(2d|flat)' + end)) ? 'flat' : null;
+  let lay = tag(new RegExp(sep + '(lr|rl|sbs|hsbs|3dh|side[ _-]?by[ _-]?side)' + end)) ? 'sbs'
+    : tag(new RegExp(sep + '(tb|bt|ou|hou|3dv|top[ _-]?bottom|over[ _-]?under)' + end)) ? 'tb'
+    : tag(new RegExp(sep + '(mono|2d)' + end)) ? 'mono' : null;
+  const r = w && h ? w / h : 2;
+  if (!proj) proj = Math.abs(r - 16 / 9) < 0.1 || Math.abs(r - 32 / 9) < 0.15 ? 'flat'
+    : r < 0.75 ? '180' : r < 1.4 ? '360' : r < 3 ? '180' : '360';
+  if (!lay) {
+    if (proj === '360') lay = r < 1.4 ? 'tb' : r < 3 ? 'mono' : 'sbs';
+    else if (proj === '180') lay = r < 0.75 ? 'tb' : r < 1.4 ? 'mono' : 'sbs';
+    else lay = r < 1.2 ? 'tb' : r < 2.5 ? 'mono' : 'sbs';
+  }
+  return proj + '-' + lay;
+}
+
+function probe(url) {
+  return new Promise(resolve => {
+    const v = document.createElement('video');
+    let done = false;
+    const finish = (w, h) => { if (done) return; done = true; v.removeAttribute('src'); v.load(); resolve([w, h]); };
+    v.preload = 'metadata'; v.muted = true;
+    v.onloadedmetadata = () => finish(v.videoWidth, v.videoHeight);
+    v.onerror = () => finish(0, 0);
+    setTimeout(() => finish(0, 0), 8000);
+    v.src = url;
+  });
+}
+
+// ---------- playlist UI ----------
+function status(msg) { $('status').textContent = msg; }
+
+function render() {
+  const list = $('list');
+  list.replaceChildren(...items.map(it => {
+    const li = document.createElement('li');
+    li.setAttribute('aria-current', String(it === cur));
+    const name = document.createElement('button');
+    name.type = 'button'; name.className = 'name'; name.textContent = it.name; name.title = 'Start here';
+    name.onclick = () => { cur = it; render(); };
+    const sel = document.createElement('select');
+    sel.setAttribute('aria-label', 'Format of ' + it.name);
+    for (const [v, label] of FORMATS) sel.add(new Option(label, v, false, v === it.format));
+    sel.onchange = () => {
+      it.format = sel.value; it.manual = true; store.set('fmt:' + it.name, sel.value);
+      if (xr && it === cur) { xr.key = ''; applyFormat(); }
+    };
+    li.append(name, sel);
+    return li;
+  }));
+  $('empty').hidden = items.length > 0;
+  $('clear').hidden = items.length === 0;
+  $('enter').disabled = !xrOK || items.length === 0;
+}
+
+$('pick').addEventListener('change', async e => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  for (const f of files) {
+    if (items.some(it => it.name === f.name && it.size === f.size)) continue;
+    const saved = store.get('fmt:' + f.name);
+    items.push({ name: f.name, size: f.size, url: URL.createObjectURL(f), w: 0, h: 0,
+      format: saved || detectFormat(f.name, 0, 0), manual: !!saved });
+  }
+  items.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  if (!cur) cur = items[0] ?? null;
+  render();
+  for (const it of items.filter(i => !i.w)) {
+    [it.w, it.h] = await probe(it.url);
+    if (!it.manual) it.format = detectFormat(it.name, it.w, it.h);
+    render();
+  }
+});
+
+$('clear').onclick = () => {
+  if (xr) return;
+  video.removeAttribute('src'); video.load();
+  items.forEach(it => URL.revokeObjectURL(it.url));
+  items.length = 0; cur = null; status(''); render();
+};
+
+const renderer = $('renderer');
+renderer.value = store.get('renderer') || 'layer';
+renderer.onchange = () => store.set('renderer', renderer.value);
+
+// ---------- playback ----------
+function play(item) {
+  cur = item;
+  const g = ++gen;
+  if (video.src !== item.url) video.src = item.url; else video.currentTime = 0;
+  video.play().catch(err => { if (g === gen && err.name === 'NotAllowedError') status('The browser blocked playback. Tap Enter VR again.'); });
+  if (video.readyState >= 1) applyFormat();
+  else video.addEventListener('loadedmetadata', () => { if (g === gen) applyFormat(); }, { once: true });
+  if (xr?.gl) xr.gl.dirty = true;
+  render();
+}
+
+function step(d) {
+  if (!items.length) return;
+  lastDir = d;
+  const i = Math.max(0, items.indexOf(cur));
+  play(items[(i + d + items.length) % items.length]);
+}
+
+video.addEventListener('error', () => {
+  if (!cur) return;
+  status(`${cur.name} won’t play here. The headset may not decode its codec or resolution.`);
+  if (xr && xr.errors++ < items.length) step(lastDir);
+});
+video.addEventListener('playing', () => { if (xr) xr.errors = 0; });
+video.addEventListener('loadeddata', () => { if (xr?.gl) xr.gl.dirty = true; });
+video.addEventListener('seeked', () => { if (xr?.gl) xr.gl.dirty = true; });
+
+// Per-eye picture size; detects half-width/half-height packing for flat 3D.
+function eyeAspect(lay) {
+  const w = video.videoWidth || 16, h = video.videoHeight || 9;
+  let a = (lay === 'sbs' ? w / 2 : w) / (lay === 'tb' ? h / 2 : h);
+  if ((lay === 'sbs' && a < 1.2) || (lay === 'tb' && a > 2.5)) a = w / h;   // half-SBS / half-TB
+  return a;
+}
+
+function applyFormat() {
+  if (!xr || !cur) return;
+  const [proj, lay] = cur.format.split('-');
+  const key = `${cur.format}:${video.videoWidth}x${video.videoHeight}`;
+  if (key === xr.key) return;
+  xr.key = key;
+  if (xr.mode === 'layer') {
+    try { setMediaLayer(proj, lay); return; }
+    catch (err) {
+      console.warn(err);
+      xr.mode = 'gl'; xr.gl = initGL(xr.session);
+      status('The native video layer failed, so the WebGL renderer took over.');
+    }
+  }
+  buildMesh(xr.gl, proj, lay);
+}
+
+// ---------- WebXR session ----------
+$('enter').addEventListener('click', () => {
+  if (xr || !items.length) return;
+  play(cur ?? items[0]);                       // start inside the click so audio is allowed
+  const wantLayer = renderer.value === 'layer';
+  navigator.xr.requestSession('immersive-vr', { optionalFeatures: wantLayer ? ['layers'] : [] })
+    .then(startSession, err => { video.pause(); status('Couldn’t start VR: ' + err.message); });
+});
+
+async function startSession(session) {
+  xr = { session, mode: 'gl', key: '', prev: new Map(), errors: 0 };
+  session.addEventListener('end', endSession);
+  status('');
+  try {
+    xr.refSpace = await session.requestReferenceSpace('local');
+    const layersOn = !session.enabledFeatures || session.enabledFeatures.includes('layers');
+    if (renderer.value === 'layer' && 'XRMediaBinding' in window && layersOn) {
+      xr.binding = new XRMediaBinding(session);
+      xr.mode = 'layer';
+    } else {
+      xr.gl = initGL(session);
+    }
+    if (video.readyState >= 1) applyFormat();
+    session.requestAnimationFrame(onFrame);
+  } catch (err) {
+    status('VR setup failed: ' + err.message);
+    session.end();
+  }
+}
+
+function endSession() {
+  video.pause();
+  if (xr) {
+    try { xr.layer?.destroy?.(); } catch {}
+    xr.gl?.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+  xr = null;
+  render();
+}
+
+function onFrame(t, frame) {
+  if (!xr || frame.session !== xr.session) return;
+  xr.session.requestAnimationFrame(onFrame);
+  pollInput();
+  if (xr.mode === 'gl') drawGL(frame);
+}
+
+// Edge-triggered controller input. Thumbstick has hysteresis so one flick is one step.
+function pollInput() {
+  for (const src of xr.session.inputSources) {
+    const gp = src.gamepad;
+    if (!gp) continue;
+    const x = gp.axes.length >= 4 ? gp.axes[2] : (gp.axes[0] ?? 0);
+    const pressed = i => !!gp.buttons[i]?.pressed;
+    const p = xr.prev.get(src.handedness);
+    const zone = x > 0.7 ? 1 : x < -0.7 ? -1 : Math.abs(x) < 0.3 ? 0 : (p?.zone ?? 0);
+    const now = { zone, trig: pressed(0), a: pressed(4), b: pressed(5) };
+    xr.prev.set(src.handedness, now);
+    if (!p) continue;                            // first sighting: don't act on a held button
+    if (now.zone && now.zone !== p.zone) step(now.zone);
+    if (now.a && !p.a) step(1);
+    if (now.b && !p.b) step(-1);
+    if (now.trig && !p.trig) video.paused ? video.play().catch(() => {}) : video.pause();
+  }
+}
+
+// Native compositor layer: the headset samples the video directly (no WebGL copy).
+function setMediaLayer(proj, lay) {
+  const layout = { sbs: 'stereo-left-right', tb: 'stereo-top-bottom', mono: 'mono' }[lay];
+  const layer = proj === 'flat'
+    ? xr.binding.createQuadLayer(video, { space: xr.refSpace, layout, width: SCREEN_W,
+        height: SCREEN_W / eyeAspect(lay), transform: new XRRigidTransform({ x: 0, y: 0, z: SCREEN_Z }) })
+    : xr.binding.createEquirectLayer(video, { space: xr.refSpace, layout,
+        centralHorizontalAngle: proj === '180' ? Math.PI : 2 * Math.PI,
+        upperVerticalAngle: Math.PI / 2, lowerVerticalAngle: -Math.PI / 2 });
+  xr.session.updateRenderState({ layers: [layer] });
+  try { xr.layer?.destroy?.(); } catch {}
+  xr.layer = layer;
+}
+
+// ---------- WebGL fallback renderer ----------
+const VS = `#version 300 es
+in vec3 aPos; in vec2 aUV;
+uniform mat4 uProj, uView; uniform vec4 uRect;
+out vec2 vUV;
+void main() { vUV = uRect.xy + aUV * uRect.zw; gl_Position = uProj * uView * vec4(aPos, 1.0); }`;
+const FS = `#version 300 es
+precision mediump float;
+in vec2 vUV; uniform sampler2D uTex; out vec4 color;
+void main() { color = texture(uTex, vUV); }`;
+
+function initGL(session) {
+  const canvas = document.createElement('canvas');
+  const gl = canvas.getContext('webgl2', { xrCompatible: true, antialias: false, alpha: false, depth: false });
+  if (!gl) throw new Error('WebGL 2 is unavailable');
+  session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl, { antialias: false, depth: false }) });
+  const sh = (type, src) => {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+  gl.bindAttribLocation(prog, 0, 'aPos'); gl.bindAttribLocation(prog, 1, 'aUV');
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
+                        [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]])
+    gl.texParameteri(gl.TEXTURE_2D, k, v);
+  const vao = gl.createVertexArray(), vbo = gl.createBuffer(), ibo = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 20, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 20, 12);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.bindVertexArray(null);
+  const loc = n => gl.getUniformLocation(prog, n);
+  return { gl, prog, tex, vao, vbo, count: 0, equirect: true, lay: 'mono', dirty: true, lastTime: -1,
+           u: { proj: loc('uProj'), view: loc('uView'), rect: loc('uRect'), tex: loc('uTex') } };
+}
+
+function buildMesh(g, proj, lay) {
+  const v = [], idx = [];
+  if (proj === 'flat') {
+    const W = SCREEN_W, H = W / eyeAspect(lay), Z = SCREEN_Z;
+    v.push(-W / 2, H / 2, Z, 0, 0,  W / 2, H / 2, Z, 1, 0,  -W / 2, -H / 2, Z, 0, 1,  W / 2, -H / 2, Z, 1, 1);
+    idx.push(0, 2, 1, 1, 2, 3);
+  } else {
+    const fov = proj === '180' ? Math.PI : 2 * Math.PI, NX = proj === '180' ? 48 : 96, NY = 48, R = 10;
+    for (let j = 0; j <= NY; j++) for (let i = 0; i <= NX; i++) {
+      const u = i / NX, t = j / NY, lon = (u - 0.5) * fov, lat = (0.5 - t) * Math.PI;
+      v.push(R * Math.cos(lat) * Math.sin(lon), R * Math.sin(lat), -R * Math.cos(lat) * Math.cos(lon), u, t);
+    }
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+      const a = j * (NX + 1) + i, c = a + NX + 1;
+      idx.push(a, c, a + 1, a + 1, c, c + 1);
+    }
+  }
+  const gl = g.gl;
+  gl.bindVertexArray(g.vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, g.vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  Object.assign(g, { count: idx.length, equirect: proj !== 'flat', lay, dirty: true });
+}
+
+const EYE_RECT = {
+  mono: { left: [0, 0, 1, 1], right: [0, 0, 1, 1] },
+  sbs: { left: [0, 0, 0.5, 1], right: [0.5, 0, 0.5, 1] },
+  tb: { left: [0, 0, 1, 0.5], right: [0, 0.5, 1, 0.5] },
+};
+
+function drawGL(frame) {
+  const g = xr.gl, gl = g.gl, base = xr.session.renderState.baseLayer;
+  const pose = frame.getViewerPose(xr.refSpace);
+  if (!pose || !base) return;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, base.framebuffer);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  if (!g.count) return;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, g.tex);
+  if (video.readyState >= 2 && (g.dirty || video.currentTime !== g.lastTime)) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    g.dirty = false; g.lastTime = video.currentTime;
+  }
+  gl.disable(gl.CULL_FACE); gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(g.prog);
+  gl.bindVertexArray(g.vao);
+  gl.uniform1i(g.u.tex, 0);
+  for (const view of pose.views) {
+    const vp = base.getViewport(view);
+    gl.viewport(vp.x, vp.y, vp.width, vp.height);
+    const m = new Float32Array(view.transform.inverse.matrix);
+    if (g.equirect) m[12] = m[13] = m[14] = 0;   // video sphere at infinity: rotation only
+    gl.uniformMatrix4fv(g.u.proj, false, view.projectionMatrix);
+    gl.uniformMatrix4fv(g.u.view, false, m);
+    gl.uniform4fv(g.u.rect, EYE_RECT[g.lay][view.eye === 'right' ? 'right' : 'left']);
+    gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+  }
+  gl.bindVertexArray(null);
+}
+
+// ---------- startup ----------
+window.LoopOne = { detectFormat, items, step, get current() { return cur; }, get session() { return xr; } };
+
+if (!window.isSecureContext) status('This page needs HTTPS to use VR.');
+else if (!navigator.xr) status('Open this page in Meta Quest Browser to enter VR. You can build the playlist here.');
+else {
+  xrOK = await navigator.xr.isSessionSupported('immersive-vr').catch(() => false);
+  if (!xrOK) status('This browser can’t enter VR. Open the page in Meta Quest Browser.');
+}
+render();
+if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
