@@ -1,5 +1,5 @@
 // Network-first for this site's own files; cached copy when the headset is offline.
-const CACHE = 'loop-one-v2';
+const CACHE = 'loop-one-v3';
 const ASSETS = ['./', './index.html', './fonts/ahn-latin.woff2', './fonts/ahn-latin-ext.woff2'];
 
 self.addEventListener('install', e => {

@@ -62,7 +62,7 @@ dd{margin:0;color:var(--muted)}
 
   <dl>
     <dt>Stick right, or A / X</dt><dd>Next video</dd>
-    <dt>Stick left</dt><dd>Previous video</dd>
+    <dt>Stick left</dt><dd>Start the video over; again within 3 seconds for the previous video</dd>
     <dt>Trigger</dt><dd>Pause or resume</dd>
     <dt>B / Y</dt><dd>Leave VR</dd>
   </dl>
@@ -87,6 +87,7 @@ const store = {
   get: k => { try { return localStorage.getItem(k); } catch { return null; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
+const RESTART_S = 3;     // going back past this point restarts the video instead
 const SWAP_MS = 120;     // time for a removed layer to leave the compositor before its player is freed
 let video = null;        // player for the current video; every video gets a fresh one
 const items = [];        // {name, size, url, w, h, format, manual}
@@ -240,6 +241,7 @@ function markDirty() { if (xr?.gl) xr.gl.dirty = true; }
 
 function step(d) {
   if (!items.length) return;
+  if (d < 0 && video && video.currentTime > RESTART_S) { video.currentTime = 0; video.play().catch(() => {}); return; }
   lastDir = d;
   const i = Math.max(0, items.indexOf(cur));
   play(items[(i + d + items.length) % items.length]);

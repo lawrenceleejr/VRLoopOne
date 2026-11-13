@@ -10,8 +10,8 @@ VIDS = tempfile.mkdtemp()
 
 def make(name, w, h):
     path = os.path.join(VIDS, name)
-    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'testsrc2=s={w}x{h}:r=30:d=2',
-                    '-f', 'lavfi', '-i', 'sine=d=2', '-shortest', '-c:v', 'libvpx-vp9', '-b:v', '200k',
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'testsrc2=s={w}x{h}:r=30:d=5',
+                    '-f', 'lavfi', '-i', 'sine=d=5', '-shortest', '-c:v', 'libvpx-vp9', '-b:v', '200k',
                     '-c:a', 'libopus', path], check=True)
     return path
 
@@ -151,6 +151,10 @@ with sync_playwright() as p:
     check(cur() == '03 unlabeled.webm', 'held stick advances exactly once')
     stick(-1); check(cur() == '02 city_360_TB.webm', 'stick left -> previous')
     button(4); check(cur() == '03 unlabeled.webm', 'A -> next')
+    n = J('__xr.layers.length')
+    J('LoopOne.video.currentTime = 4'); page.wait_for_function('!LoopOne.video.seeking && LoopOne.video.currentTime > 3.5')
+    stick(-1)
+    check(cur() == '03 unlabeled.webm' and vid('currentTime') < 1 and J('__xr.layers.length') == n, 'stick left after 3 s restarts the video')
     stick(-1); stick(-1); stick(-1)
     check(cur() == '10 concert.webm', 'stick left wraps to last')
     wait_layers(len(J('__xr.layers')) + 1)
