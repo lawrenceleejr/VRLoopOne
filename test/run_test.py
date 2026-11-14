@@ -118,6 +118,7 @@ with sync_playwright() as p:
     last = lambda: J('__xr.layers.at(-1)')
 
     check(J("document.getElementById('enter').disabled"), 'Enter VR disabled with empty playlist')
+    check(not page.is_visible('#clear') and not page.is_visible('#logbox'), 'Clear and log hidden when empty')
     page.set_input_files('#pick', files)
     page.wait_for_function('LoopOne.items.length === 4 && LoopOne.items.every(i => i.w > 0)')
     names = J('LoopOne.items.map(i => i.name)')
