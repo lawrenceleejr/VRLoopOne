@@ -36,6 +36,10 @@ select{font:inherit;font-size:var(--s0);color:var(--ink);background:var(--field)
 @media (max-width:32rem){li{grid-template-columns:2em minmax(0,1fr)}li select{grid-column:2;justify-self:start;margin-bottom:.4rem}}
 .enter{width:100%;justify-content:center;font-size:var(--s2);padding:.6em;border-radius:14px;background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 #status{min-height:1.5em;margin:.75rem 0 0}
+li .fail{color:var(--muted);font-size:var(--s0)}
+details{margin:1.5rem 0 0;font-size:var(--s0)}
+summary{cursor:pointer;color:var(--muted);min-height:44px;display:flex;align-items:center}
+#log{white-space:pre-wrap;font:inherit;font-variant-numeric:tabular-nums;color:var(--muted);margin:.25rem 0 .75rem}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:.3rem 1.25rem;margin:2rem 0;font-size:var(--s0)}
 dt{font-weight:700}
 dd{margin:0;color:var(--muted)}
@@ -59,6 +63,11 @@ dd{margin:0;color:var(--muted)}
 
   <button id="enter" class="enter" type="button" disabled>Enter VR</button>
   <p id="status" class="hint" role="status"></p>
+  <details id="logbox" hidden>
+    <summary>Playback log</summary>
+    <pre id="log"></pre>
+    <button id="copylog" type="button">Copy log</button>
+  </details>
 
   <dl>
     <dt>Stick right, or A / X</dt><dd>Next video</dd>
@@ -95,6 +104,9 @@ let cur = null;          // item playing, or first to play
 let xr = null;           // live session state
 let gen = 0;             // guards stale loadedmetadata handlers
 let lastDir = 1;
+let wantPlay = false;    // what the viewer asked for; the trigger toggles it
+const log = [];          // playback events, shown under the Enter button after leaving VR
+let logT0 = performance.now();
 let xrOK = false;
 
 // ---------- format detection (filename tags first, then aspect ratio) ----------
@@ -135,6 +147,17 @@ function probe(url) {
 // ---------- playlist UI ----------
 function status(msg) { $('status').textContent = msg; }
 
+function note(msg) {
+  const t = (performance.now() - logT0) / 1000;
+  log.push(`${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, '0')}  ${msg}`);
+  if (log.length > 300) log.shift();
+  $('log').textContent = log.join('\n');
+  $('logbox').hidden = false;
+}
+$('copylog').onclick = () => navigator.clipboard.writeText(log.join('\n'))
+  .then(() => status('Log copied.'), () => status('Couldn’t copy. Select the log text instead.'));
+const gb = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.round(n / 1e6) + ' MB';
+
 function render() {
   const list = $('list');
   list.replaceChildren(...items.map(it => {
@@ -150,6 +173,11 @@ function render() {
       it.format = sel.value; it.manual = true; store.set('fmt:' + it.name, sel.value);
       if (xr && it === cur) play(it, true);
     };
+    if (it.failed) {
+      const f = document.createElement('span');
+      f.className = 'fail'; f.textContent = ' · won’t play: ' + it.failed;
+      name.append(f);
+    }
     li.append(name, sel);
     return li;
   }));
@@ -196,8 +224,12 @@ renderer.onchange = () => store.set('renderer', renderer.value);
 function release(v) { if (!v) return; v.pause(); v.removeAttribute('src'); v.load(); }
 function destroyLayer(l) { try { l?.destroy?.(); } catch {} }
 
+function restartCurrent() {
+  wantPlay = true; video.currentTime = 0; video.play().catch(() => {});
+}
+
 function play(item, restart = false) {
-  if (!restart && item === cur && video) { video.currentTime = 0; video.play().catch(() => {}); return; }
+  if (!restart && item === cur && video) { restartCurrent(); return; }
   cur = item;
   const g = ++gen;
   render();
@@ -217,16 +249,30 @@ function load(item) {
   if (xr?.retire.length) xr.retire.push(() => release(old)); else release(old);
   const v = video = document.createElement('video');
   v.loop = true; v.playsInline = true; v.preload = 'auto';
+  wantPlay = true;
   const mine = f => () => { if (v === video) f(); };
-  v.addEventListener('loadedmetadata', mine(applyFormat));
+  if (xr) note(`load ${item.name} (${gb(item.size)})`);
+  v.addEventListener('loadedmetadata', mine(() => {
+    if (xr) note(`  ${v.videoWidth}×${v.videoHeight}, ${Math.round(v.duration)} s`);
+    applyFormat();
+  }));
   v.addEventListener('loadeddata', mine(markDirty));
   v.addEventListener('seeked', mine(markDirty));
-  v.addEventListener('playing', mine(() => { if (xr) xr.errors = 0; }));
-  v.addEventListener('playing', mine(matchRefreshRate), { once: true });
-  v.addEventListener('error', mine(() => {
-    status(`${cur.name} won’t play here. The headset may not decode its codec or resolution.`);
-    if (xr && xr.errors++ < items.length) step(lastDir);
+  v.addEventListener('waiting', mine(() => { v.waitT = performance.now(); }));
+  v.addEventListener('playing', mine(() => {
+    if (v.waitT) { const s = (performance.now() - v.waitT) / 1000; if (s > 0.5 && xr) note(`  stalled ${s.toFixed(1)} s`); v.waitT = 0; }
+    if (xr) xr.errors = 0;
+    item.tries = 0;
+    if (item.failed) { item.failed = null; render(); }
   }));
+  v.addEventListener('playing', mine(matchRefreshRate), { once: true });
+  v.addEventListener('pause', mine(() => resumeIfUnasked(v)));
+  v.addEventListener('error', mine(() => {
+    const e = v.error;
+    fail(v, item, e ? (['', 'aborted', 'read error', 'decode error', 'unsupported format'][e.code] || 'error ' + e.code)
+      + (e.message ? ` (${e.message})` : '') : 'error');
+  }));
+  if (xr) setTimeout(() => { if (v === video && xr && v.readyState < 1 && !v.error) fail(v, item, 'no response after 10 s'); }, 10000);
   v.src = item.url;
   v.play().catch(err => {
     if (v !== video || err.name !== 'NotAllowedError') return;
@@ -239,9 +285,42 @@ function load(item) {
 
 function markDirty() { if (xr?.gl) xr.gl.dirty = true; }
 
+// A large video can fail to open while the headset is still freeing the previous one's
+// decoder, so try twice more with a pause before giving up and moving on.
+function fail(v, item, why) {
+  if (v !== video) return;
+  item.tries = (item.tries || 0) + 1;
+  if (xr && item.tries <= 2) {
+    note(`  ${why}; retrying`);
+    const g = gen;
+    setTimeout(() => { if (g === gen && xr) play(item, true); }, 1000 * item.tries);
+    return;
+  }
+  item.tries = 0; item.failed = why;
+  if (xr) note(`  ${why}; skipping`);
+  status(`${item.name} won’t play here: ${why}.`);
+  render();
+  if (xr && xr.errors++ < items.length) advance(lastDir);
+}
+
+// The browser can pause a player on its own. Resume it unless the viewer paused it,
+// and stop fighting if it keeps happening.
+function resumeIfUnasked(v) {
+  if (!xr || !wantPlay || v.error) return;
+  const now = performance.now();
+  xr.autoResumes = (xr.autoResumes || []).filter(t => now - t < 10000).concat(now);
+  if (xr.autoResumes.length > 5) { note('  paused by the browser repeatedly; leaving it paused'); wantPlay = false; return; }
+  note('  paused by the browser; resuming');
+  setTimeout(() => { if (v === video && xr && wantPlay && v.paused) v.play().catch(e => note('  resume failed: ' + e.name)); }, 300);
+}
+
 function step(d) {
   if (!items.length) return;
-  if (d < 0 && video && video.currentTime > RESTART_S) { video.currentTime = 0; video.play().catch(() => {}); return; }
+  if (d < 0 && video && video.currentTime > RESTART_S) { if (xr) note('restart'); restartCurrent(); return; }
+  advance(d);
+}
+
+function advance(d) {
   lastDir = d;
   const i = Math.max(0, items.indexOf(cur));
   play(items[(i + d + items.length) % items.length]);
@@ -260,7 +339,10 @@ function matchRefreshRate(tries = 4) {
     const off = r => r < fps ? 9 : Math.abs(r / fps - Math.round(r / fps));
     const best = [...s.supportedFrameRates].sort((a, b) => a - b).reduce((b, r) => off(r) < off(b) - 0.02 ? r : b);
     xr.fps = fps;
-    if (best !== s.frameRate) s.updateTargetFrameRate(best).catch(() => {});
+    if (best !== s.frameRate) {
+      note(`  ${fps.toFixed(1)} fps, display set to ${best} Hz`);
+      s.updateTargetFrameRate(best).catch(e => note('  refresh rate change failed: ' + e.message));
+    }
   }, 1500);
 }
 
@@ -292,6 +374,7 @@ function applyFormat() {
 // ---------- WebXR session ----------
 $('enter').addEventListener('click', () => {
   if (xr || !items.length) return;
+  log.length = 0; logT0 = performance.now(); $('log').textContent = '';
   play(cur ?? items[0], true);                 // start inside the click so audio is allowed
   const wantLayer = renderer.value === 'layer';
   navigator.xr.requestSession('immersive-vr', { optionalFeatures: wantLayer ? ['layers'] : [] })
@@ -301,6 +384,10 @@ $('enter').addEventListener('click', () => {
 async function startSession(session) {
   xr = { session, mode: 'gl', key: '', prev: new Map(), errors: 0, layer: null, retire: [] };
   session.addEventListener('end', endSession);
+  session.addEventListener('visibilitychange', () => {
+    note('headset ' + session.visibilityState);
+    if (session.visibilityState === 'visible' && wantPlay && video?.paused) video.play().catch(() => {});
+  });
   status('');
   try {
     xr.refSpace = await session.requestReferenceSpace('local');
@@ -311,6 +398,7 @@ async function startSession(session) {
     } else {
       xr.gl = initGL(session);
     }
+    note(`enter VR (${xr.mode === 'layer' ? 'native layer' : 'WebGL'})`);
     if (video?.readyState >= 1) applyFormat();
     session.requestAnimationFrame(onFrame);
     matchRefreshRate();
@@ -321,7 +409,9 @@ async function startSession(session) {
 }
 
 function endSession() {
+  wantPlay = false;
   video?.pause();
+  if (xr) note('leave VR');
   if (xr) {
     destroyLayer(xr.layer);
     xr.retire.forEach(f => f());
@@ -350,9 +440,13 @@ function pollInput() {
     const now = { zone, trig: pressed(0), a: pressed(4), b: pressed(5) };
     xr.prev.set(src.handedness, now);
     if (!p) continue;                            // first sighting: don't act on a held button
-    if (now.zone && now.zone !== p.zone) step(now.zone);
-    if (now.a && !p.a) step(1);
-    if (now.trig && !p.trig && video) video.paused ? video.play().catch(() => {}) : video.pause();
+    if (now.zone && now.zone !== p.zone) { note(now.zone > 0 ? 'stick: next' : 'stick: back'); step(now.zone); }
+    if (now.a && !p.a) { note('A: next'); step(1); }
+    if (now.trig && !p.trig && video) {
+      wantPlay = video.paused;
+      note(wantPlay ? 'trigger: play' : 'trigger: pause');
+      wantPlay ? video.play().catch(() => {}) : video.pause();
+    }
     if (now.b && !p.b) { xr.session.end(); return; }
   }
 }
@@ -482,7 +576,7 @@ function drawGL(frame) {
 
 // ---------- startup ----------
 window.LoopOne = { detectFormat, items, step, get current() { return cur; }, get session() { return xr; },
-  get video() { return video; }, get ready() { return !xr || xr.mode === 'gl' || !!xr.layer; } };
+  get video() { return video; }, log, get ready() { return !xr || xr.mode === 'gl' || !!xr.layer; } };
 
 if (!window.isSecureContext) status('This page needs HTTPS to use VR.');
 else if (!navigator.xr) status('Open this page in Meta Quest Browser to enter VR. You can build the playlist here.');

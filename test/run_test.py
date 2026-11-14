@@ -160,8 +160,22 @@ with sync_playwright() as p:
     wait_layers(len(J('__xr.layers')) + 1)
     l = last(); check(l['type'] == 'quad' and abs(l['width'] - 3.2) < 1e-6 and abs(l['height'] - 1.8) < 1e-3 and l['transform']['z'] == -2.5, f'flat quad layer {l.get("width")}x{l.get("height")}')
 
-    button(0); check(vid('paused'), 'trigger pauses')
+    button(0); page.wait_for_timeout(600); check(vid('paused'), 'trigger pauses and it stays paused')
     button(0); page.wait_for_timeout(200); check(not vid('paused'), 'trigger resumes')
+    J('LoopOne.video.pause()')
+    try:
+        page.wait_for_function('!LoopOne.video.paused', timeout=3000); ok = True
+    except Exception: ok = False
+    check(ok and any('paused by the browser; resuming' in l for l in J('LoopOne.log')), 'pause not asked for is resumed')
+
+    # A one-off failure (e.g. decoder still busy) is retried, not skipped.
+    before = cur()
+    J("LoopOne.video.dispatchEvent(new Event('error'))")
+    for _ in range(100):
+        tick(); page.wait_for_timeout(50)
+        if any('retrying' in l for l in J('LoopOne.log')) and J('LoopOne.ready') and vid('readyState') >= 2: break
+    settle()
+    check(cur() == before and not vid('paused'), f'transient failure retried on the same video ({cur()})')
 
     n = J('__xr.layers.length')
     page.select_option('#list li:nth-child(4) select', 'flat-sbs')
@@ -172,16 +186,21 @@ with sync_playwright() as p:
     page.set_input_files('#pick', [bad])
     J("while (LoopOne.current.name !== '03 unlabeled.webm') LoopOne.step(1)")
     J("LoopOne.step(1)")                          # onto 04 broken
-    for _ in range(60):
+    for _ in range(200):
         tick(); page.wait_for_timeout(50)
         if cur() != '04 broken.webm': break
-    check(cur() == '10 concert.webm', f'broken file skipped ({cur()})')
+    check(cur() == '10 concert.webm', f'broken file skipped after retries ({cur()})')
+    check(sum('retrying' in l for l in J('LoopOne.log')) >= 3, 'broken file retried twice before skipping')
     st = J("document.getElementById('status').textContent"); check('won’t play' in st, f'broken file reported ({st})')
+    check('won’t play' in page.inner_text('#list li:nth-child(4)'), 'broken file marked in playlist')
     errors[:] = [e for e in errors if 'MEDIA' not in e.upper() and 'DEMUXER' not in e.upper()]
 
     settle()
     button(5)
     check(J('__xr.session.ended') is True and J('LoopOne.session') is None and vid('paused'), 'B leaves VR and pauses')
+    page.wait_for_timeout(500); check(vid('paused'), 'stays paused after leaving VR')
+    lg = J('LoopOne.log')
+    check(J("!document.getElementById('logbox').hidden") and 'enter VR' in lg[0] and 'leave VR' in lg[-1], f'playback log shown ({len(lg)} lines)')
     check(J('localStorage.getItem("fmt:10 concert.webm")') == 'flat-mono', 'manual format persisted')
 
     # Runtime that refuses an empty layer list: old layer stays up until the new one replaces it.
